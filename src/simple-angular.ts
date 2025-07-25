@@ -5,43 +5,46 @@ import { parseComponent } from "./template-parser";
 
 // Only lifecyle hooks I'll be supporting
 export interface OnInit {
-  ngOnInit(): void;
+    ngOnInit(): void;
 }
 export interface AfterViewInit {
-  ngAfterViewInit(): void;
+    ngAfterViewInit(): void;
 }
 export type SimpleChanges = {
-  [input: string]: { previousValue: unknown; currentValue: unknown };
+    [input: string]: { previousValue: unknown; currentValue: unknown };
 };
 export interface OnChanges {
-  ngOnChanges(changes: SimpleChanges): void;
+    ngOnChanges(changes: SimpleChanges): void;
 }
 
 const compileApplication = <T extends ComponentClass>(rootComponent: T) => {
-  const rootViewNode = parseComponent(rootComponent);
+    const rootViewNode = parseComponent(rootComponent);
 
-  return (component: ComponentClass) => {
-    if ("ngOnInit" in component && typeof component.ngOnInit === "function") {
-      component.ngOnInit();
-    }
-    // simplified angular syntax parser
+    return (component: ComponentClass) => {
+        if (
+            "ngOnInit" in component &&
+            typeof component.ngOnInit === "function"
+        ) {
+            component.ngOnInit();
+        }
+        // simplified angular syntax parser
 
-    if (
-      "ngAfterViewInit" in component &&
-      typeof component.ngAfterViewInit === "function"
-    ) {
-      component.ngAfterViewInit();
-    }
-  };
+        if (
+            "ngAfterViewInit" in component &&
+            typeof component.ngAfterViewInit === "function"
+        ) {
+            component.ngAfterViewInit();
+        }
+    };
 };
 
 // normally the app would have already been compiled before this, but I'm going to call the compiler inside this bootstrap
 // function since I have no build system and doing this all "JIT".
 export const bootstrapApplication = (
-  element: HTMLElement,
-  rootComponent: ComponentClass,
+    element: HTMLElement,
+    rootComponent: ComponentClass,
 ) => {
-  const renderer = compileApplication(rootComponent);
+    const renderer = compileApplication(rootComponent);
 
-  element.appendChild(rootDOMElement);
+    element.appendChild(rootDOMElement);
 };
