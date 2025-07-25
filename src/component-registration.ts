@@ -2,7 +2,10 @@ import type { Class } from "./utils";
 
 // framework internal mappings for classes
 export const componentBySelector = new Map<string, ComponentClass>();
-export const componentMetaByClass = new Map<ComponentClass, ComponentMetadata>();
+export const componentMetaByClass = new Map<
+  ComponentClass,
+  ComponentMetadata
+>();
 
 // framework internal view structure. Its a giant array of all values bound in the app,
 // along with the element related to that binding, if relevant. Some bindings, like plain text,
@@ -21,11 +24,11 @@ export const Component =
   (componentMetadata: ComponentMetadata) => (componentCtor: Class) => {
     if (componentBySelector.has(componentMetadata.selector)) {
       throw new Error(
-        `${componentMetadata.selector} already exists, please give this component a unique selector.`
+        `${componentMetadata.selector} already exists, please give this component a unique selector.`,
       );
     }
     if (componentMetaByClass.has(componentCtor)) {
-      throw new Error('Attempted to register a component class twice.');
+      throw new Error("Attempted to register a component class twice.");
     }
 
     componentBySelector.set(componentMetadata.selector, componentCtor);
@@ -33,4 +36,3 @@ export const Component =
 
     return componentCtor as ComponentClass;
   };
-

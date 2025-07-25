@@ -1,6 +1,7 @@
 // This example only simulates a simple version of angular, using only stanalone (root provided) components and no modules
 
 import type { ComponentClass } from "./component-registration";
+import { parseComponent } from "./template-parser";
 
 // Only lifecyle hooks I'll be supporting
 export interface OnInit {
@@ -10,22 +11,24 @@ export interface AfterViewInit {
   ngAfterViewInit(): void;
 }
 export type SimpleChanges = {
-    [input: string]: { previousValue: unknown, currentValue: unknown };
-}
+  [input: string]: { previousValue: unknown; currentValue: unknown };
+};
 export interface OnChanges {
-    ngOnChanges(changes: SimpleChanges): void;
+  ngOnChanges(changes: SimpleChanges): void;
 }
 
 const compileApplication = <T extends ComponentClass>(rootComponent: T) => {
+  const rootViewNode = parseComponent(rootComponent);
+
   return (component: ComponentClass) => {
-    if ('ngOnInit' in component && typeof component.ngOnInit === 'function') {
+    if ("ngOnInit" in component && typeof component.ngOnInit === "function") {
       component.ngOnInit();
     }
     // simplified angular syntax parser
 
     if (
-      'ngAfterViewInit' in component &&
-      typeof component.ngAfterViewInit === 'function'
+      "ngAfterViewInit" in component &&
+      typeof component.ngAfterViewInit === "function"
     ) {
       component.ngAfterViewInit();
     }
@@ -36,7 +39,7 @@ const compileApplication = <T extends ComponentClass>(rootComponent: T) => {
 // function since I have no build system and doing this all "JIT".
 export const bootstrapApplication = (
   element: HTMLElement,
-  rootComponent: ComponentClass
+  rootComponent: ComponentClass,
 ) => {
   const renderer = compileApplication(rootComponent);
 
