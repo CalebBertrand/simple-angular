@@ -33,6 +33,7 @@ export type ComponentViewNode = Omit<ElementViewNode, "type"> & {
 export type ControlFlowViewNode =
     | {
           type: ViewNodeTypes.If;
+          expression: string;
           body: Array<ViewNode>;
           else?: Array<ViewNode>;
       }
@@ -53,6 +54,15 @@ export type ViewNode =
     | TextViewNode
     | ComponentViewNode;
 
+
+type LexingResult<T> = {
+    valid: false;
+    jumpTo: number;
+} | ({
+    valid: true;
+    jumpTo: number;
+} & T);
+
 // intended to run on whatever's between the opening and closing angle brackets
 function isValidOpenOrSelfClosingTag(
     str: string,
@@ -64,7 +74,7 @@ function isValidOpenOrSelfClosingTag(
 
     if (!inner) return false;
 
-    const parts = inner.split(/\s+/);
+    const parts = inner.split(/"\s+/);
 
     const tagName = parts[0];
     if (!isValidTagName(tagName)) return false;
@@ -73,7 +83,7 @@ function isValidOpenOrSelfClosingTag(
     const attributes: Array<ViewNodeAttribute> = [];
     for (let i = 1; i < parts.length; i++) {
         const attr = parts[i];
-        const attrValidation = isValidAttribute(attr);
+        const attrValidation = isValidAttribute(attr + '"'); // add the double quotes back from the regex split
         if (!attrValidation) return false;
         attributes.push(attrValidation);
     }
@@ -126,6 +136,59 @@ function isValidClosingTag(str: string) {
     const [tagName] = parts;
     if (!isAlphaNum(tagName)) return false;
     return { tagName };
+}
+
+function isValidIfOpening(template: string, index: number): LexingResult<{ innerExpression: string }> {
+    const validationState = { 
+        valid: false, 
+        jumpTo: index
+    } as const;
+    let { jumpTo } = validationState;
+    if (template.slice(index, index + 3) === "@if") {
+        jumpTo += 3;
+
+        const openingBracket = template.indexOf("{", index + 3);
+        if (openingBracket < 0) {
+            return validationState;
+        }
+
+        const ifStart = index + 3;
+        const openingParens = template.indexOf("(", ifStart);
+        if (openingParens < ifStart || openingParens > openingBracket) {
+            return validationState;
+        }
+
+        let i = openingParens + 1;
+        let parens = 1;
+        while (parens > 0 && i < openingBracket) {
+            if (template[i] === ')') {
+                parens--;
+            } else if (template[i] === '(') {
+                parens++;
+            }
+
+            i++;
+        }
+
+        if (i >= openingBracket) {
+            return validationState;
+        }
+
+        const closingParens = i;
+        if (template.slice(closingParens + 1, openingBracket).trim().length) {
+            return validationState; // there was something other than whitespace between the ) and {
+        }
+
+        const innerExpression = template.slice(openingParens + 1, closingParens);
+        jumpTo = openingBracket + 1;
+        return { 
+            ...validationState,
+            valid: true,
+            innerExpression 
+        };
+    }
+
+    return validationState;
 }
 
 function isAlpha(ch: string) {
@@ -248,21 +311,16 @@ export const parseComponent = (component: ComponentClass) => {
                 continue;
             }
         } else if (nextChar === "@") {
-            if (template.slice(index, index + 3) === "@if") {
-                const openingBracket = template.indexOf("{", index + 3);
-                if (openingBracket > 0) {
-                    index = openingBracket + 1;
-                    tagStack.push({
-                        type: ViewNodeTypes.If,
-                        body: [],
-                    });
-                    continue;
-                } else {
-                    // There was no opening bracket, so we will interpret the @if as plain text and move on
-                    index = index + 3;
-                    continue;
-                }
+            const validation = isValidIfOpening(template, index);
+            if (validation.valid) {
+                tagStack.push({
+                    type: ViewNodeTypes.If,
+                    expression: validation.innerExpression,
+                    body: [],
+                });
             }
+
+            index = validation.jumpTo;
         } else if (nextChar === "}") {
             const parent = tagStack.at(-1);
             if (parent?.type === ViewNodeTypes.If) {
