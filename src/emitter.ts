@@ -2,10 +2,34 @@ import {
     ViewNodeTypes,
     type ComponentViewNode,
     type ViewNode,
+    type ViewNodeAttribute,
 } from "./template-parser";
 
 const i = {
-    CreateElement: (tag: string) => "createElement()",
+    createElement: (tag: string) => `createElement('${tag}');`,
+    createAttribute: ({name, value, isBound}: ViewNodeAttribute) => `createAttribute('${name}', '${value}', ${isBound});`,
+    createIf: (bindExpression: string) => `createIf('${bindExpression}');`,
+};
+
+const nodeStartInstructions = (node: ViewNode) => {
+    const instructions: Array<string> = [];
+    switch (node.type) {
+        case ViewNodeTypes.Element:
+            instructions.push(i.createElement(node.tagName));
+            instructions.push(node.attributes.map(i.createAttribute));
+            break;
+        case ViewNodeTypes.Component:
+            break;
+        case ViewNodeTypes.If:
+            instructions.push(i.createIf(node.));
+        case ViewNodeTypes.For:
+        case ViewNodeTypes.Text:
+    }
+
+    return instructions.join('\n');
+};
+const endInstructions = (node: ViewNode) => {
+
 };
 
 export const createRenderFunction = (node: ComponentViewNode) => {
@@ -22,14 +46,10 @@ export const createRenderFunction = (node: ComponentViewNode) => {
             continue;
         }
 
-        switch (node.type) {
-            case ViewNodeTypes.Element:
-                fnBody += "";
-
-            case ViewNodeTypes.Component:
-            case ViewNodeTypes.If:
-            case ViewNodeTypes.For:
-            case ViewNodeTypes.Text:
+        // on first added to the stack, process the node itself
+        if (childIndex === 0) {
+            
         }
+
     }
 };
