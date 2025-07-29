@@ -1,32 +1,41 @@
+import type { ComponentViewNode } from "./template-parser";
 import type { Class } from "./utils";
 
-// framework internal mappings for classes
-export const componentBySelector = new Map<string, ComponentClass>();
-export const componentMetaByClass = new Map<
-    ComponentClass,
-    ComponentMetadata
->();
-
-export type ComponentMetadata = {
+type ComponentMetadata = {
     selector: string;
     template: string;
 };
-export type ComponentClass = Class;
+type InternalComponentMetadata = ComponentMetadata & {
+    ast: ComponentViewNode | null;
+    componentClass: ComponentClass;
+};
+
+export const COMPONENT_META = Symbol('angular_component_metadata');
+type ComponentClass = Class & {
+    [COMPONENT_META]: InternalComponentMetadata;
+};
+
+const metaBySelector = new Map<string, InternalComponentMetadata>();
 
 // This is the decorator which will register a class as a component
 export const Component =
     (componentMetadata: ComponentMetadata) => (componentCtor: Class) => {
-        if (componentBySelector.has(componentMetadata.selector)) {
-            throw new Error(
-                `${componentMetadata.selector} already exists, please give this component a unique selector.`,
-            );
-        }
-        if (componentMetaByClass.has(componentCtor)) {
-            throw new Error("Attempted to register a component class twice.");
-        }
-
-        componentBySelector.set(componentMetadata.selector, componentCtor);
-        componentMetaByClass.set(componentCtor, componentMetadata);
+        const meta = {
+            ...componentMetadata,
+            ast: null,
+            componentClass: componentCtor as any,
+        };
+        (componentCtor as any)[COMPONENT_META] = meta;
+        metaBySelector.set(componentMetadata.selector, meta);
 
         return componentCtor as ComponentClass;
     };
+
+// mostly useful for instructions to get context about the component from a simple string selector
+export const getComponentMeta = (selector: string) => {
+    const meta = metaBySelector.get(selector);
+    if (!meta) {
+        throw new Error(`Tried to get ${selector} meta but it hadnt been registered.`);
+    }
+    return meta;
+}

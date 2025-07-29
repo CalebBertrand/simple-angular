@@ -1,4 +1,5 @@
-import type { ViewNodeAttribute } from "./template-parser";
+import { getComponentMeta } from "./component-registration";
+import type { ComponentViewNode, ViewNodeAttribute, ViewNodeTypes } from "./template-parser";
 
 type Binding =
     | {
@@ -12,12 +13,11 @@ type Binding =
       };
 
 enum LViewEntryType {
-    Container,
+    Component,
     Element,
     If,
     Else,
     Text,
-    Attribute,
 }
 
 type LViewEntry = {
@@ -27,6 +27,7 @@ type LViewEntry = {
     | {
           type: LViewEntryType.Element;
           native: HTMLElement;
+          attributes: Map<string, Binding>;
       }
     | {
           type: LViewEntryType.If;
@@ -44,13 +45,10 @@ type LViewEntry = {
           binding: Binding;
       }
     | {
-          type: LViewEntryType.Container;
+          type: LViewEntryType.Component; // currently just using containers as a root node for components
           native: Comment;
-          index: 0;
-      }
-    | {
-          type: LViewEntryType.Attribute;
-          binding: Binding & { static: false };
+          instance: any; // the actual instantiation of the class
+          lView: LView;
       }
 );
 
@@ -61,51 +59,54 @@ type LViewBlockEntries = Extract<
             | LViewEntryType.If
             | LViewEntryType.Element
             | LViewEntryType.Else
-            | LViewEntryType.Container;
+            | LViewEntryType.Component;
     }
 >;
+
+type LView = Array<LViewEntry>;
+
 type RenderingState = {
     parent: LViewBlockEntries | null;
-    lView: Array<LViewEntry>;
+    lView: LView;
     ctx: any | null; // the instance of the class being rendered, it will be used to evaluate expressions
 };
 const renderingState: RenderingState = {
-    parent: null,
+    parent: null, // the immediate parent, which could be any kind of node
     lView: [],
     ctx: null,
 };
 
-export const createComponent = (selector: string, ctx: any) => {
+export const createComponent = (index: number, selector: string) => {
     const native = document.createComment(`<__${selector}__start__>`);
     const lView: Array<LViewEntry> = [];
-
-    renderingState.lView = lView;
-    renderingState.parent = {
-        type: LViewEntryType.Container,
+    const { componentClass } = getComponentMeta(selector);
+    const instance = new componentClass();
+    const componentNode = {
+        type: LViewEntryType.Component,
         native,
-        index: 0,
-        parent: null,
-    };
-    renderingState.ctx = ctx;
+        index,
+        parent: renderingState.parent,
+        instance,
+        lView
+    } as LViewEntry & { type: LViewEntryType.Component };
 
-    return lView as ReadonlyArray<LViewEntry>;
-};
-
-export const enterComponent = (ctx: any, lView: Array<LViewEntry>) => {
-    if (!lView.length) {
-        throw new Error(
-            "An already initialized lView should always have at least one root node",
-        );
-    }
+    renderingState.lView[index] = componentNode;
 
     renderingState.lView = lView;
-    renderingState.parent = lView[0] as LViewEntry & {
-        type: LViewEntryType.Container;
-    };
-    renderingState.ctx = ctx;
+    renderingState.parent = componentNode;
+    renderingState.ctx = instance;
 };
 
-export const createElement = (tag: string) => {
+export const enterComponent = (index: number) => {
+    const subComponent = renderingState.lView[index] as LViewEntry & { type: LViewEntryType.Component; };
+    renderingState.lView = subComponent.lView;
+    renderingState.parent = subComponent;
+    renderingState.ctx = subComponent.instance;
+};
+
+export const closeComponent = ()
+
+export const createElement = (index: number, tag: string) => {
     if (isInDeactivatedRegion()) {
         return;
     }
@@ -118,6 +119,7 @@ export const createElement = (tag: string) => {
         index: null,
         type: LViewEntryType.Element,
         native,
+        attributes: new Map(),
     };
 
     renderingState.parent = elementNode;
@@ -132,7 +134,7 @@ export const createAttribute = (
         return;
     }
 
-    const { lView, parent } = renderingState;
+    const { parent } = renderingState;
     if (parent?.type !== LViewEntryType.Element) {
         throw new Error("Tried to set an attribute but was not in an element!");
     }
@@ -145,13 +147,7 @@ export const createAttribute = (
             expression,
             lastValue: evaluatedValue,
         };
-        lView.push({
-            type: LViewEntryType.Attribute,
-            binding,
-            parent,
-            index: lView.length,
-        });
-
+        parent.attributes.set(name, binding);
         parent.native.setAttribute(name, evaluatedValue);
     } else {
         // if its not bound, set it once on creation and forget about it, no need to add to lView
@@ -159,13 +155,13 @@ export const createAttribute = (
     }
 };
 
-export const updateAttribute = (index: number) => {
-    const entry = renderingState.lView[index];
-    if (entry.type !== LViewEntryType.Attribute) {
-        throw new Error('Attempted to update attribute, but index did not point to one.');
+export const updateAttribute = () => {
+    const { parent } = renderingState;
+    if (parent?.type !== LViewEntryType.Element) {
+        throw new Error("Tried to set an attribute but was not in an element!");
     }
 
-    entry.parent?.native
+    parent?.
 };
 
 export const closeElement = (tag: string) => {
@@ -306,6 +302,17 @@ const isInDeactivatedRegion = () => {
     if (parent.type === LViewEntryType.If) return !parent.binding.lastValue;
     if (parent.type === LViewEntryType.Else)
         return parent.ifEntry.binding.lastValue;
-    if (parent.type === LViewEntryType.Element) return true; // not supporting component slots yet, so by default ignore everything in them
     return false;
+};
+
+const setBinding = (binding: Binding, assignmentFn: (value: any) => void) => {
+    if (binding.static) {
+        assignmentFn(binding.value);
+    } else {
+        const nextVal = evaluate(binding.expression);
+        if (nextVal !== binding.lastValue) {
+            binding.lastValue = nextVal;
+            assignmentFn(nextVal);
+        }
+    }
 };
