@@ -1,5 +1,4 @@
 import { getComponentMeta } from "./component-registration";
-import type { ComponentViewNode, ViewNodeAttribute, ViewNodeTypes } from "./template-parser";
 
 type Binding =
     | {
@@ -48,7 +47,6 @@ type LViewEntry = {
           type: LViewEntryType.Component; // currently just using containers as a root node for components
           native: Comment;
           instance: any; // the actual instantiation of the class
-          lView: LView;
       }
 );
 
@@ -69,12 +67,19 @@ type RenderingState = {
     parent: LViewBlockEntries | null;
     lView: LView;
     ctx: any | null; // the instance of the class being rendered, it will be used to evaluate expressions
+    lastIf: (LViewEntry & { type: LViewEntryType.If }) | null;
 };
+
+const rootLView: LView = [];
+const lViewRegistry = new Map<any, LView>(); // a mapping from each instance of a component to its lView
+
 const renderingState: RenderingState = {
     parent: null, // the immediate parent, which could be any kind of node
-    lView: [],
+    lView: rootLView,
     ctx: null,
+    lastIf: null,
 };
+
 
 export const createComponent = (index: number, selector: string) => {
     const native = document.createComment(`<__${selector}__start__>`);
@@ -87,7 +92,6 @@ export const createComponent = (index: number, selector: string) => {
         index,
         parent: renderingState.parent,
         instance,
-        lView
     } as LViewEntry & { type: LViewEntryType.Component };
 
     renderingState.lView[index] = componentNode;
@@ -95,16 +99,26 @@ export const createComponent = (index: number, selector: string) => {
     renderingState.lView = lView;
     renderingState.parent = componentNode;
     renderingState.ctx = instance;
+
+    lViewRegistry.set(instance, lView);
 };
 
 export const enterComponent = (index: number) => {
     const subComponent = renderingState.lView[index] as LViewEntry & { type: LViewEntryType.Component; };
-    renderingState.lView = subComponent.lView;
+
+    const lView = lViewRegistry.get(subComponent.instance);
+    if (!lView) {
+        throw new Error('Tried to enter a component but it hadnt been created yet');
+    }
+
+    renderingState.lView = lView;
     renderingState.parent = subComponent;
     renderingState.ctx = subComponent.instance;
 };
 
-export const closeComponent = ()
+export const closeComponent = () => {
+    
+};
 
 export const createElement = (index: number, tag: string) => {
     if (isInDeactivatedRegion()) {
@@ -123,6 +137,7 @@ export const createElement = (index: number, tag: string) => {
     };
 
     renderingState.parent = elementNode;
+    renderingState.lView[index] = elementNode;
 };
 
 export const createAttribute = (
@@ -155,13 +170,18 @@ export const createAttribute = (
     }
 };
 
-export const updateAttribute = () => {
+export const updateAttribute = (name: string) => {
     const { parent } = renderingState;
     if (parent?.type !== LViewEntryType.Element) {
         throw new Error("Tried to set an attribute but was not in an element!");
     }
 
-    parent?.
+    const attribute = parent.attributes.get(name);
+    if (!attribute) {
+        throw new Error(`Tried to set an attribute ${name} but it wasn't on the element`);
+    }
+
+    setBinding(attribute, (value: any) => parent.native.setAttribute(name, value));
 };
 
 export const closeElement = (tag: string) => {
@@ -180,7 +200,7 @@ export const closeElement = (tag: string) => {
     renderingState.parent = parent.parent;
 };
 
-export const createText = (value: string, isBound: boolean) => {
+export const createText = (index: number, value: string, isBound: boolean) => {
     if (isInDeactivatedRegion()) {
         return;
     }
@@ -215,14 +235,11 @@ export const createText = (value: string, isBound: boolean) => {
         binding,
     };
 
-    if (isBound) {
-        lView.push(textNode);
-    }
-
+    lView[index] = textNode;
     parent.native.appendChild(native);
 };
 
-export const createIf = (bindExpression: string) => {
+export const createIf = (index: number, bindExpression: string) => {
     if (isInDeactivatedRegion()) {
         return;
     }
@@ -248,19 +265,20 @@ export const createIf = (bindExpression: string) => {
         type: LViewEntryType.If,
     };
 
-    lView.push(ifNode);
+    lView[index] = ifNode;
     renderingState.parent = ifNode;
+    renderingState.lastIf = ifNode;
 };
 
-export const createElse = () => {
+export const createElse = (index: number) => {
     const lView = renderingState.lView;
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const ifNode = renderingState.parent;
-    if (ifNode?.type !== LViewEntryType.If) {
-        throw new Error("Tried to create an else but was not in an if.");
+    const ifNode = renderingState.lastIf;
+    if (!ifNode) {
+        throw new Error("Tried to create an else but was not after an if.");
     }
 
     const parent = ifNode.parent!;
@@ -273,7 +291,7 @@ export const createElse = () => {
         ifEntry: ifNode,
     };
 
-    lView.push(elseNode);
+    lView[index] = elseNode;
     renderingState.parent = elseNode;
 };
 

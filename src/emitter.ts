@@ -6,55 +6,91 @@ import {
 } from "./template-parser";
 
 const i = {
-    createElement: (tag: string) => `createElement('${tag}');`,
+    createElement: (index: number, tag: string) => `createElement(${index}, '${tag}');`,
     createAttribute: ({name, value, isBound}: ViewNodeAttribute) => `createAttribute('${name}', '${value}', ${isBound});`,
-    createIf: (bindExpression: string) => `createIf('${bindExpression}');`,
-    createText: (text: string, isBound: boolean) => `createText('${text}', ${isBound})`,
+    createIf: (index: number, bindExpression: string) => `createIf(${index}, '${bindExpression}');`,
+    createText: (index: number, text: string, isBound: boolean) => `createText(${index}, '${text}', ${isBound});`,
+    closeElement: (tag: string) => `closeElement('${tag}');`,
+    closeIf: () => `closeIf();`,
 };
 
-const nodeStartInstructions = (node: ViewNode) => {
-    const instructions: Array<string> = [];
+const nodeStartInstructions = (index: number, node: ViewNode) => {
+    const createInstructions: Array<string> = [];
+    const updateInstructions: Array<string> = [];
+
     switch (node.type) {
         case ViewNodeTypes.Element:
-            instructions.push(i.createElement(node.tagName));
-            instructions.push(...node.attributes.map(i.createAttribute));
+            createInstructions.push(i.createElement(index, node.tagName));
+            createInstructions.push(...node.attributes.map(i.createAttribute));
             break;
         case ViewNodeTypes.Component:
             break;
         case ViewNodeTypes.If:
-            instructions.push(i.createIf(node.expression));
+            createInstructions.push(i.createIf(index, node.expression));
             break;
         case ViewNodeTypes.For:
             break; // not supported yet
         case ViewNodeTypes.Text:
-            instructions.push(i.createText(node.body, node.isBound));
+            createInstructions.push(i.createText(index, node.body, node.isBound));
             break;
     }
 
-    return instructions.join('\n');
+    return [createInstructions, updateInstructions] as const;
 };
-const endInstructions = (node: ViewNode) => {
+const nodeEndInstructions = (node: ViewNode) => {
+    const createInstructions: Array<string> = [];
+    const updateInstructions: Array<string> = [];
 
-};
-
-export const createRenderFunction = (node: ComponentViewNode) => {
-    let fnBody = "";
-
-    const stack: Array<{
-        childIndex: number; // point where we have processed so far
-        node: ViewNode;
-    }> = [{ node, childIndex: 0 }];
-    while (stack.length > 0) {
-        const { node, childIndex } = stack.at(-1)!;
-        if (childIndex >= node.body.length) {
-            stack.pop();
-            continue;
-        }
-
-        // on first added to the stack, process the node itself
-        if (childIndex === 0) {
-            
-        }
-
+    switch (node.type) {
+        case ViewNodeTypes.If:
+            createInstructions.push(i.closeIf());
+            updateInstructions.push(i.closeIf());
+            break;
+        case ViewNodeTypes.Element:
+            createInstructions.push(i.closeElement(node.tagName));
+            updateInstructions.push(i.closeElement(node.tagName));
+            break;
     }
+
+    return [createInstructions, updateInstructions] as const;
+};
+
+export const createRenderFunction = (componentNode: ComponentViewNode) => {
+    const createInstructions: Array<string> = [];
+    const updateInstructions: Array<string> = [];
+    let index = 0; // used to track where in the lView these nodes will be
+
+    const stack = [{ node: componentNode as ViewNode, childrenProcessed: false as boolean, }];
+    while (stack.length > 0) {
+        const { node, childrenProcessed } = stack.at(-1)!;
+        if (childrenProcessed) {
+            const [nextCreate, nextUpdate] = nodeEndInstructions(node);
+            createInstructions.push(...nextCreate);
+            updateInstructions.push(...nextUpdate);
+            stack.pop();
+        } else {
+            const [nextCreate, nextUpdate] = nodeStartInstructions(index++, node);
+            createInstructions.push(...nextCreate);
+            updateInstructions.push(...nextUpdate);
+
+            stack.at(-1)!.childrenProcessed = true;
+            if (Array.isArray(node.body)) {
+                stack.push(...node.body
+                           .reverse()
+                           .map(n => ({ node: n, childrenProcessed: false }))
+                );
+            }
+        }
+    }
+
+    const createStageParam = 'createStage'; // will be a boolean at runtime
+    const fnBody = `
+        if (${createStageParam}) {
+            ${createInstructions.join('\n')}
+        } else {
+            ${updateInstructions.join('\n')}
+        }
+    `;
+
+    return new Function(createStageParam, fnBody);
 };
