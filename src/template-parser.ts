@@ -1,8 +1,6 @@
-import {
-    componentBySelector,
-    componentMetaByClass,
-    type ComponentClass,
-} from "./component-registration";
+import { getComponentMeta } from "./component-registration";
+import { assert } from "./utils/assert";
+import type { Class } from "./utils/Class";
 
 export type ViewNodeAttribute = {
     name: string;
@@ -18,50 +16,56 @@ export enum ViewNodeTypes {
     Text,
 }
 
-export type ElementViewNode = {
+export interface ViewNodeStructure {
+    type: ViewNodeTypes;
+}
+
+export interface ElementViewNode extends ViewNodeStructure {
     type: ViewNodeTypes.Element;
     attributes: Array<ViewNodeAttribute>;
     tagName: string;
     body: Array<ViewNode>; // the element could also have plain text inside it
     isSelfClosing: boolean;
-};
-
-export type ComponentViewNode = Omit<ElementViewNode, "type"> & {
+}
+export interface ComponentViewNode extends Omit<ElementViewNode, "type"> {
     type: ViewNodeTypes.Component;
-};
+}
 
-export type ControlFlowViewNode =
-    | {
-          type: ViewNodeTypes.If;
-          expression: string;
-          body: Array<ViewNode>;
-          else?: Array<ViewNode>;
-      }
-    | {
-          type: ViewNodeTypes.For; // probably wont implement until later but just for completeness
-          track: string;
-          body: Array<ViewNode>;
-      };
-export type TextViewNode = {
+export interface IfViewNode extends ViewNodeStructure {
+    type: ViewNodeTypes.If;
+    expression: string;
+    body: Array<ViewNode>;
+    else?: Array<ViewNode>;
+}
+export interface ForViewNode extends ViewNodeStructure {
+    type: ViewNodeTypes.For; // probably wont implement until later but just for completeness
+    track: string;
+    body: Array<ViewNode>;
+}
+export type ControlFlowViewNode = IfViewNode | ForViewNode;
+
+export interface TextViewNode extends ViewNodeStructure {
     type: ViewNodeTypes.Text;
     body: string;
     isBound: boolean;
-};
+}
 
 export type ViewNode =
     | ElementViewNode
-    | ControlFlowViewNode
-    | TextViewNode
-    | ComponentViewNode;
+    | ComponentViewNode
+    | IfViewNode
+    | ForViewNode
+    | TextViewNode;
 
-
-type LexingResult<T> = {
-    valid: false;
-    jumpTo: number;
-} | ({
-    valid: true;
-    jumpTo: number;
-} & T);
+type LexingResult<T> =
+    | {
+          valid: false;
+          jumpTo: number;
+      }
+    | ({
+          valid: true;
+          jumpTo: number;
+      } & T);
 
 // intended to run on whatever's between the opening and closing angle brackets
 function isValidOpenOrSelfClosingTag(
@@ -89,7 +93,7 @@ function isValidOpenOrSelfClosingTag(
     }
 
     return {
-        type: componentBySelector.has(tagName)
+        type: getComponentMeta(tagName)
             ? ViewNodeTypes.Component
             : ViewNodeTypes.Element,
         tagName,
@@ -138,10 +142,13 @@ function isValidClosingTag(str: string) {
     return { tagName };
 }
 
-function isValidIfOpening(template: string, index: number): LexingResult<{ innerExpression: string }> {
-    const validationState = { 
-        valid: false, 
-        jumpTo: index
+function isValidIfOpening(
+    template: string,
+    index: number,
+): LexingResult<{ innerExpression: string }> {
+    const validationState = {
+        valid: false,
+        jumpTo: index,
     } as const;
     let { jumpTo } = validationState;
     if (template.slice(index, index + 3) === "@if") {
@@ -161,9 +168,9 @@ function isValidIfOpening(template: string, index: number): LexingResult<{ inner
         let i = openingParens + 1;
         let parens = 1;
         while (parens > 0 && i < openingBracket) {
-            if (template[i] === ')') {
+            if (template[i] === ")") {
                 parens--;
-            } else if (template[i] === '(') {
+            } else if (template[i] === "(") {
                 parens++;
             }
 
@@ -179,12 +186,15 @@ function isValidIfOpening(template: string, index: number): LexingResult<{ inner
             return validationState; // there was something other than whitespace between the ) and {
         }
 
-        const innerExpression = template.slice(openingParens + 1, closingParens);
+        const innerExpression = template.slice(
+            openingParens + 1,
+            closingParens,
+        );
         jumpTo = openingBracket + 1;
-        return { 
+        return {
             ...validationState,
             valid: true,
-            innerExpression 
+            innerExpression,
         };
     }
 
@@ -199,8 +209,8 @@ function isAlphaNum(ch: string) {
     return /^[A-Za-z0-9]$/.test(ch);
 }
 
-export const parseComponent = (component: ComponentClass) => {
-    const meta = componentMetaByClass.get(component);
+export const parseComponent = (component: Class) => {
+    const meta = getComponentMeta(component);
     if (!meta) {
         throw new Error("This class was not registered as a component.");
     }
@@ -378,8 +388,8 @@ export const parseComponent = (component: ComponentClass) => {
         }
     }
 
-    console.assert(tagStack.length === 0);
-    console.assert(!!rootElement);
+    assert(tagStack.length === 0, "Did not find element to parse");
+    assert(!!rootElement, "Root element undefined");
 
     return rootElement;
 };

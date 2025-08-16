@@ -1,5 +1,5 @@
 import type { ComponentViewNode } from "./template-parser";
-import type { Class } from "./utils";
+import type { Class } from "./utils/Class";
 
 type ComponentMetadata = {
     selector: string;
@@ -10,7 +10,7 @@ type InternalComponentMetadata = ComponentMetadata & {
     componentClass: ComponentClass;
 };
 
-export const COMPONENT_META = Symbol('angular_component_metadata');
+export const COMPONENT_META = Symbol("angular_component_metadata");
 type ComponentClass = Class & {
     [COMPONENT_META]: InternalComponentMetadata;
 };
@@ -32,10 +32,13 @@ export const Component =
     };
 
 // mostly useful for instructions to get context about the component from a simple string selector
-export const getComponentMeta = (selector: string) => {
-    const meta = metaBySelector.get(selector);
+export const getComponentMeta = (getBy: string | Class) => {
+    const meta =
+        typeof getBy === "string"
+            ? metaBySelector.get(getBy)
+            : (getBy as any)[COMPONENT_META];
     if (!meta) {
-        throw new Error(`Tried to get ${selector} meta but it hadnt been registered.`);
+        throw new Error(`Tried to get meta but it hadnt been registered.`);
     }
     return meta;
-}
+};

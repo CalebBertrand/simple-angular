@@ -1,4 +1,5 @@
 import { getComponentMeta } from "./component-registration";
+import { assert } from "./utils/assert";
 
 type Binding =
     | {
@@ -73,86 +74,119 @@ type RenderingState = {
 const rootLView: LView = [];
 const lViewRegistry = new Map<any, LView>(); // a mapping from each instance of a component to its lView
 
-const renderingState: RenderingState = {
+const initialRenderingState: RenderingState = {
     parent: null, // the immediate parent, which could be any kind of node
     lView: rootLView,
     ctx: null,
     lastIf: null,
 };
+const stateStack: Array<RenderingState> = [initialRenderingState];
+const getState = () => {
+    const mostRecentState = stateStack.at(-1);
+    assert(
+        !!mostRecentState,
+        "Attemted to get rendering state but the stack was empty",
+    );
 
+    return mostRecentState;
+};
+const popParent = () => {
+    const state = getState();
+    state.parent = state.parent?.parent ?? null;
+};
 
-export const createComponent = (index: number, selector: string) => {
+const createComponent = (index: number, selector: string) => {
     const native = document.createComment(`<__${selector}__start__>`);
-    const lView: Array<LViewEntry> = [];
     const { componentClass } = getComponentMeta(selector);
     const instance = new componentClass();
+    const { parent, lView } = getState();
+
     const componentNode = {
         type: LViewEntryType.Component,
         native,
         index,
-        parent: renderingState.parent,
+        parent,
         instance,
     } as LViewEntry & { type: LViewEntryType.Component };
 
-    renderingState.lView[index] = componentNode;
+    lView[index] = componentNode;
 
-    renderingState.lView = lView;
-    renderingState.parent = componentNode;
-    renderingState.ctx = instance;
-
+    stateStack.push({
+        lView,
+        parent: componentNode,
+        ctx: instance,
+        lastIf: null,
+    });
     lViewRegistry.set(instance, lView);
 };
 
-export const enterComponent = (index: number) => {
-    const subComponent = renderingState.lView[index] as LViewEntry & { type: LViewEntryType.Component; };
+const enterComponent = (index: number) => {
+    const { lView } = getState();
+    const subComponent = lView[index] as LViewEntry & {
+        type: LViewEntryType.Component;
+    };
 
-    const lView = lViewRegistry.get(subComponent.instance);
-    if (!lView) {
-        throw new Error('Tried to enter a component but it hadnt been created yet');
+    const subComponentLView = lViewRegistry.get(subComponent.instance);
+    if (!subComponentLView) {
+        throw new Error(
+            "Tried to enter a component but it hadnt been created yet",
+        );
     }
 
-    renderingState.lView = lView;
-    renderingState.parent = subComponent;
-    renderingState.ctx = subComponent.instance;
+    stateStack.push({
+        lView: subComponentLView,
+        parent: subComponent,
+        ctx: subComponent.instance,
+        lastIf: null,
+    });
 };
 
-export const closeComponent = () => {
-    
+const closeComponent = () => {
+    stateStack.pop();
 };
 
-export const createElement = (index: number, tag: string) => {
+const createElement = (index: number, tag: string) => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
     const native = document.createElement(tag);
-    const parent = renderingState.parent;
+    const state = getState();
 
     const elementNode: Extract<LViewEntry, { type: LViewEntryType.Element }> = {
-        parent,
+        parent: state.parent,
         index: null,
         type: LViewEntryType.Element,
         native,
         attributes: new Map(),
     };
 
-    renderingState.parent = elementNode;
-    renderingState.lView[index] = elementNode;
+    state.parent = elementNode;
+    state.lView[index] = elementNode;
 };
 
-export const createAttribute = (
-    name: string,
-    value: string,
-    isBound: boolean,
-) => {
+const enterElement = (index: number) => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const { parent } = renderingState;
-    if (parent?.type !== LViewEntryType.Element) {
-        throw new Error("Tried to set an attribute but was not in an element!");
+    const state = getState();
+    const element = state.lView[index] as LViewEntry & {
+        type: LViewEntryType.Element;
+    };
+    state.parent = element;
+};
+
+const createAttribute = (name: string, value: string, isBound: boolean) => {
+    if (isInDeactivatedRegion()) {
+        return;
     }
+
+    const { parent } = getState();
+    assert(
+        parent?.type === LViewEntryType.Element,
+        "Tried to set an attribute but was not in an element!",
+    );
 
     if (isBound) {
         const expression = Function(`return ${value};`);
@@ -170,50 +204,46 @@ export const createAttribute = (
     }
 };
 
-export const updateAttribute = (name: string) => {
-    const { parent } = renderingState;
-    if (parent?.type !== LViewEntryType.Element) {
-        throw new Error("Tried to set an attribute but was not in an element!");
-    }
+const updateAttribute = (name: string) => {
+    const { parent } = getState();
+    assert(
+        parent?.type === LViewEntryType.Element,
+        "Tried to set an attribute but was not in an element!",
+    );
 
     const attribute = parent.attributes.get(name);
-    if (!attribute) {
-        throw new Error(`Tried to set an attribute ${name} but it wasn't on the element`);
-    }
+    assert(
+        !!attribute,
+        `Tried to set an attribute ${name} but it wasn't on the element`,
+    );
 
-    setBinding(attribute, (value: any) => parent.native.setAttribute(name, value));
+    setBinding(attribute, (value: any) =>
+        parent.native.setAttribute(name, value),
+    );
 };
 
-export const closeElement = (tag: string) => {
+const closeElement = (tag: string) => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const parent = renderingState.parent;
-    if (
-        parent?.type !== LViewEntryType.Element ||
-        parent.native.tagName !== tag
-    ) {
-        throw new Error(`Unexpected closing ${tag} tag.`);
-    }
+    const { parent } = getState();
+    assert(
+        parent?.type === LViewEntryType.Element &&
+            parent.native.tagName === tag,
+        `Unexpected closing ${tag} tag.`,
+    );
 
-    renderingState.parent = parent.parent;
+    popParent();
 };
 
-export const createText = (index: number, value: string, isBound: boolean) => {
+const createText = (index: number, value: string, isBound: boolean) => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const lView = renderingState.lView;
-    const parent = renderingState.parent;
-    if (
-        !parent ||
-        (parent.type !== LViewEntryType.Element &&
-            parent.type !== LViewEntryType.If)
-    ) {
-        throw new Error("No parent element to append text to.");
-    }
+    const { lView, parent } = getState();
+    assert(!!parent, "No parent element to append text to.");
 
     const native = document.createTextNode(value);
 
@@ -239,20 +269,21 @@ export const createText = (index: number, value: string, isBound: boolean) => {
     parent.native.appendChild(native);
 };
 
-export const createIf = (index: number, bindExpression: string) => {
+const updateText = (index: number) => {
+    const { lView } = getState();
+    const textNode = lView[index] as LViewEntry & { type: LViewEntryType.Text };
+    const updateText = (newText: string) =>
+        (textNode.native.nodeValue = newText);
+    setBinding(textNode.binding, updateText);
+};
+
+const createIf = (index: number, bindExpression: string) => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const lView = renderingState.lView;
-    const parent = renderingState.parent;
-    if (
-        !parent ||
-        (parent.type !== LViewEntryType.Element &&
-            parent.type !== LViewEntryType.If)
-    ) {
-        throw new Error("No parent element to append text to.");
-    }
+    const state = getState();
+    const { lView, parent } = state;
 
     const native = document.createComment(`<__if__ bind="${bindExpression}">`);
     const expression = Function(`return ${bindExpression};`);
@@ -266,56 +297,65 @@ export const createIf = (index: number, bindExpression: string) => {
     };
 
     lView[index] = ifNode;
-    renderingState.parent = ifNode;
-    renderingState.lastIf = ifNode;
+    state.parent = ifNode;
+    state.lastIf = ifNode;
 };
 
-export const createElse = (index: number) => {
-    const lView = renderingState.lView;
+const enterConditional = (index: number) => {
+    const state = getState();
+    const node = state.lView[index] as LViewEntry & {
+        type: LViewEntryType.If | LViewEntryType.Else;
+    };
+
+    if (node.type === LViewEntryType.If) {
+        setBinding(node.binding);
+    }
+    state.parent = node;
+};
+
+const createElse = (index: number) => {
+    const state = getState();
+    const { lView, lastIf } = state;
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const ifNode = renderingState.lastIf;
-    if (!ifNode) {
-        throw new Error("Tried to create an else but was not after an if.");
-    }
+    assert(!!lastIf, "Tried to create an else but was not after an if.");
 
-    const parent = ifNode.parent!;
+    const parent = lastIf.parent!;
     const native = document.createComment(`<__else__>`);
     const elseNode: Extract<LViewEntry, { type: LViewEntryType.Else }> = {
         parent,
         native,
         index: lView.length,
         type: LViewEntryType.Else,
-        ifEntry: ifNode,
+        ifEntry: lastIf,
     };
 
     lView[index] = elseNode;
-    renderingState.parent = elseNode;
+    state.parent = elseNode;
 };
 
-export const closeIf = () => {
+const closeConditional = () => {
     if (isInDeactivatedRegion()) {
         return;
     }
 
-    const parent = renderingState.parent;
-    if (
-        parent?.type !== LViewEntryType.If &&
-        parent?.type !== LViewEntryType.Else
-    ) {
-        throw new Error("Tried to close an if but we were not in an if block.");
-    }
-
-    renderingState.parent = parent.parent;
+    const { parent } = getState();
+    assert(
+        parent?.type === LViewEntryType.If ||
+            parent?.type === LViewEntryType.Else,
+        "Tried to close an if block but was not in an if or else.",
+    );
+    popParent();
 };
 
-const evaluate = (expression: (Binding & { static: false })["expression"]) =>
-    expression.bind(renderingState.ctx)();
+const evaluate = (expression: (Binding & { static: false })["expression"]) => {
+    return expression.bind(getState().ctx)();
+};
 
 const isInDeactivatedRegion = () => {
-    const parent = renderingState.parent;
+    const { parent } = getState();
     if (!parent) return false;
     if (parent.type === LViewEntryType.If) return !parent.binding.lastValue;
     if (parent.type === LViewEntryType.Else)
@@ -323,7 +363,14 @@ const isInDeactivatedRegion = () => {
     return false;
 };
 
-const setBinding = (binding: Binding, assignmentFn: (value: any) => void) => {
+const detatchNode = () => {
+    const {} = getState();
+};
+
+const setBinding = (
+    binding: Binding,
+    assignmentFn: (value: any) => void = (_) => {},
+) => {
     if (binding.static) {
         assignmentFn(binding.value);
     } else {
@@ -333,4 +380,21 @@ const setBinding = (binding: Binding, assignmentFn: (value: any) => void) => {
             assignmentFn(nextVal);
         }
     }
+};
+
+export const instructions = {
+    createText,
+    updateText,
+    createComponent,
+    enterConditional,
+    enterComponent,
+    closeConditional,
+    closeElement,
+    closeComponent,
+    createIf,
+    createElse,
+    createAttribute,
+    updateAttribute,
+    enterElement,
+    createElement,
 };
