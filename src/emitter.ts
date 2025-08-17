@@ -3,6 +3,7 @@ import {
     type ComponentViewNode,
     type ViewNode,
     type ViewNodeAttribute,
+    type ViewNodeEvent,
 } from "./template-parser";
 import type { MapUnion } from "./utils/UnionMapper";
 
@@ -79,6 +80,7 @@ const i = {
     closeElement: (tag: string) => `closeElement('${tag}');`,
     closeConditional: () => `closeConditional();`,
     closeComponent: () => `closeComponent();`,
+    createEvent: ({ name, value }: ViewNodeEvent) => `createEvent('${name}', '${value}')`,
 };
 
 const nodeStartInstructions = (index: number, node: InstructionNode) => {
@@ -89,6 +91,7 @@ const nodeStartInstructions = (index: number, node: InstructionNode) => {
         case InstructionNodeType.Element:
             createInstructions.push(i.createElement(index, node.tagName));
             createInstructions.push(...node.attributes.map(i.createAttribute));
+            createInstructions.push(...node.events.map(i.createEvent));
 
             updateInstructions.push(i.enterElement(index));
             updateInstructions.push(

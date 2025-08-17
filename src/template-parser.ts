@@ -7,6 +7,10 @@ export type ViewNodeAttribute = {
     value: any;
     isBound: boolean; // if it is bound, the value will be evaluated as js with `this` set to the component class
 };
+export type ViewNodeEvent = {
+    name: string;
+    value: string;
+};
 
 export enum ViewNodeTypes {
     Element,
@@ -23,6 +27,7 @@ export interface ViewNodeStructure {
 export interface ElementViewNode extends ViewNodeStructure {
     type: ViewNodeTypes.Element;
     attributes: Array<ViewNodeAttribute>;
+    events: Array<ViewNodeEvent>;
     tagName: string;
     body: Array<ViewNode>; // the element could also have plain text inside it
     isSelfClosing: boolean;
@@ -85,11 +90,22 @@ function isValidOpenOrSelfClosingTag(
 
     // Validate each attribute
     const attributes: Array<ViewNodeAttribute> = [];
+    const events: Array<ViewNodeEvent> = [];
     for (let i = 1; i < parts.length; i++) {
         const attr = parts[i];
         const attrValidation = isValidAttribute(attr + '"'); // add the double quotes back from the regex split
-        if (!attrValidation) return false;
-        attributes.push(attrValidation);
+        if (attrValidation) {
+            attributes.push(attrValidation);
+            continue;
+        } 
+
+        const eventValidation = isValidEvent(attr + '"');
+        if (eventValidation) {
+            events.push(eventValidation);
+            continue;
+        }
+
+        return false; // not a valid opening tag, that wasn't a valid attribute or event
     }
 
     return {
@@ -99,6 +115,7 @@ function isValidOpenOrSelfClosingTag(
         tagName,
         isSelfClosing,
         attributes,
+        events,
         body: [],
     };
 }
@@ -132,6 +149,22 @@ function isValidAttribute(attr: string): false | ViewNodeAttribute {
     if (!(value.startsWith('"') && value.endsWith('"'))) return false;
 
     return { name, value, isBound };
+}
+
+function isValidEvent(attr: string): false | ViewNodeEvent {
+    const eqIndex = attr.indexOf("=");
+    if (eqIndex === -1) return false;
+
+    let name = attr.slice(0, eqIndex).trim();
+    const value = attr.slice(eqIndex + 1).trim();
+
+    if (!name.startsWith("(") || !name.endsWith(")")) return false;
+    name = name.slice(1, -1);
+
+    if (!isValidTagName(name)) return false;
+    if (!(value.startsWith('"') && value.endsWith('"'))) return false;
+
+    return { name, value: value.slice(1, -1) };
 }
 
 function isValidClosingTag(str: string) {

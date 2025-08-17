@@ -28,6 +28,7 @@ type LViewEntry = {
           type: LViewEntryType.Element;
           native: HTMLElement;
           attributes: Map<string, Binding>;
+          events: Map<string, string>;
       }
     | {
           type: LViewEntryType.If;
@@ -81,6 +82,18 @@ const initialRenderingState: RenderingState = {
     lastIf: null,
 };
 const stateStack: Array<RenderingState> = [initialRenderingState];
+
+export const setRootElement = (element: HTMLElement) => {
+    initialRenderingState.parent = {
+        type: LViewEntryType.Element,
+        native: element,
+        attributes: new Map(),
+        events: new Map(),
+        index: null,
+        parent: null,
+    };
+};
+
 const getState = () => {
     const mostRecentState = stateStack.at(-1);
     assert(
@@ -118,6 +131,10 @@ const createComponent = (index: number, selector: string) => {
         lastIf: null,
     });
     lViewRegistry.set(instance, lView);
+
+    if ('ngOnInit' in instance && typeof instance.ngOnInit === 'function') {
+        instance.ngOnInit();
+    }
 };
 
 const enterComponent = (index: number) => {
@@ -159,6 +176,7 @@ const createElement = (index: number, tag: string) => {
         type: LViewEntryType.Element,
         native,
         attributes: new Map(),
+        events: new Map(),
     };
 
     state.parent = elementNode;
@@ -175,6 +193,15 @@ const enterElement = (index: number) => {
         type: LViewEntryType.Element;
     };
     state.parent = element;
+};
+
+const createEvent = (name: string, value: string) => {
+    const { parent, ctx } = getState();
+    assert(parent?.type === LViewEntryType.Element, 'Tried to set an event but not in an element');
+    assert(!!parent?.native, 'Tried to set an event but found no parent DOM element');
+    assert(!!ctx, 'Failed to find a parent component while creating an event');
+    const callback = new Function(value);
+    parent.native.addEventListener(name, callback.bind(ctx));
 };
 
 const createAttribute = (name: string, value: string, isBound: boolean) => {
@@ -397,4 +424,5 @@ export const instructions = {
     updateAttribute,
     enterElement,
     createElement,
+    createEvent,
 };

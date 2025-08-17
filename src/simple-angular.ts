@@ -1,50 +1,57 @@
 // This example only simulates a simple version of angular, using only stanalone (root provided) components and no modules
 
-import type { ComponentClass } from "./component-registration";
+import { createRenderFn } from "./emitter";
+import { setRootElement } from "./instructions";
 import { parseComponent } from "./template-parser";
+import type { Class } from "./utils/Class";
 
 // Only lifecyle hooks I'll be supporting
 export interface OnInit {
     ngOnInit(): void;
 }
-export interface AfterViewInit {
-    ngAfterViewInit(): void;
-}
-export type SimpleChanges = {
-    [input: string]: { previousValue: unknown; currentValue: unknown };
-};
-export interface OnChanges {
-    ngOnChanges(changes: SimpleChanges): void;
-}
 
-const compileApplication = <T extends ComponentClass>(rootComponent: T) => {
+const compileApplication = <T extends Class>(rootComponent: T, rootElement: HTMLElement) => {
+    // get the AST
     const rootViewNode = parseComponent(rootComponent);
 
-    return (component: ComponentClass) => {
-        if (
-            "ngOnInit" in component &&
-            typeof component.ngOnInit === "function"
-        ) {
-            component.ngOnInit();
-        }
-        // simplified angular syntax parser
-
-        if (
-            "ngAfterViewInit" in component &&
-            typeof component.ngAfterViewInit === "function"
-        ) {
-            component.ngAfterViewInit();
-        }
-    };
+    // set root element which the instructions will use to build off of
+    setRootElement(rootElement);
+    
+    // build the render function
+    return createRenderFn(rootViewNode);
 };
 
 // normally the app would have already been compiled before this, but I'm going to call the compiler inside this bootstrap
 // function since I have no build system and doing this all "JIT".
 export const bootstrapApplication = (
     element: HTMLElement,
-    rootComponent: ComponentClass,
+    rootComponent: Class,
 ) => {
-    const renderer = compileApplication(rootComponent);
+    const renderer = compileApplication(rootComponent, element);
 
-    element.appendChild(rootDOMElement);
+    // initialize (render in create mode)
+    renderer(true);
+
+    // mini zone js
+    const refresh = () => renderer(false);
+    window.addEventListener('click', refresh, true);
+
+    const baseSetTimeout = window.setTimeout;
+    window.setTimeout = (fn, ms) => {
+        const patchedFn = () => {
+            refresh();
+            (fn as Function)();
+        };
+        return baseSetTimeout(patchedFn, ms);
+    };
+
+    const baseSetInterval = window.setTimeout;
+    window.setInterval = (fn, ms) => {
+        const patchedFn = () => {
+            refresh();
+            (fn as Function)();
+        };
+        return baseSetInterval(patchedFn, ms);
+    };
+
 };
