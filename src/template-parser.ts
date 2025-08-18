@@ -79,7 +79,7 @@ function isValidOpenOrSelfClosingTag(
     str = str.trim();
 
     const isSelfClosing = str.endsWith("/");
-    const inner = str.slice(1, isSelfClosing ? -2 : -1).trim();
+    const inner = (isSelfClosing ? str.slice(0, str.length - 1) : str).trim();
 
     if (!inner) return false;
 
@@ -108,10 +108,16 @@ function isValidOpenOrSelfClosingTag(
         return false; // not a valid opening tag, that wasn't a valid attribute or event
     }
 
+    let type: ViewNodeTypes.Element | ViewNodeTypes.Component;
+    try {
+        getComponentMeta(tagName);
+        type = ViewNodeTypes.Component;
+    } catch {
+        type = ViewNodeTypes.Element;
+    }
+
     return {
-        type: getComponentMeta(tagName)
-            ? ViewNodeTypes.Component
-            : ViewNodeTypes.Element,
+        type,
         tagName,
         isSelfClosing,
         attributes,
@@ -251,27 +257,26 @@ export const parseComponent = (component: Class) => {
 
     let index = 0;
     let lastIdentifiedText = 0;
-    let rootElement: ElementViewNode | undefined = undefined;
-    const tagStack: Array<ElementViewNode | ControlFlowViewNode> = [];
+    let rootElements: Array<ViewNode> = [];
+    const tagStack: Array<ElementViewNode | ControlFlowViewNode | ComponentViewNode> = [];
 
     const addToParent = (node: ViewNode) => {
+        debugger;
         const parent = tagStack.at(-1);
         if (!parent) {
-            if (node.type === ViewNodeTypes.Element) {
-                tagStack.push(node);
-                rootElement = node;
-                return;
-            } else {
-                throw new Error(
-                    "Templates must always have a root element which contains everything else.",
-                );
+            if (!tagStack.length) {
+                rootElements.push(node);
             }
-        }
 
-        if (parent.type === ViewNodeTypes.If && parent.else != null) {
-            parent.else.push(node);
+            if ([ViewNodeTypes.Element, ViewNodeTypes.If, ViewNodeTypes.Component].includes(node.type)) {
+                tagStack.push(node as any);
+            }
         } else {
-            parent.body.push(node);
+            if (parent.type === ViewNodeTypes.If && parent.else != null) {
+                parent.else.push(node);
+            } else {
+                parent.body.push(node);
+            }
         }
     };
 
@@ -293,7 +298,7 @@ export const parseComponent = (component: Class) => {
     while (index < template.length) {
         const nextChar = template.charAt(index);
 
-        if (nextChar.match("\s")) {
+        if (nextChar.match(/\s/)) {
             index++;
             continue;
         } else if (nextChar === "<") {
@@ -311,12 +316,13 @@ export const parseComponent = (component: Class) => {
             if (openingValidation) {
                 addPastTextToParent();
 
-                const { isSelfClosing, tagName, attributes } =
+                const { isSelfClosing, tagName, attributes, events } =
                     openingValidation;
                 if (!isSelfClosing) {
                     tagStack.push({
                         type: ViewNodeTypes.Element,
                         attributes,
+                        events,
                         tagName,
                         isSelfClosing,
                         body: [],
@@ -356,6 +362,7 @@ export const parseComponent = (component: Class) => {
         } else if (nextChar === "@") {
             const validation = isValidIfOpening(template, index);
             if (validation.valid) {
+                addPastTextToParent();
                 tagStack.push({
                     type: ViewNodeTypes.If,
                     expression: validation.innerExpression,
@@ -364,6 +371,7 @@ export const parseComponent = (component: Class) => {
             }
 
             index = validation.jumpTo;
+            lastIdentifiedText = index - 1;
         } else if (nextChar === "}") {
             const parent = tagStack.at(-1);
             if (parent?.type === ViewNodeTypes.If) {
@@ -403,12 +411,14 @@ export const parseComponent = (component: Class) => {
             if (template[index + 1] === "{") {
                 const closingBrackets = template.indexOf("}}", index);
                 if (closingBrackets > 0) {
+                    addPastTextToParent();
                     addToParent({
                         type: ViewNodeTypes.Text,
                         body: template.slice(index + 2, closingBrackets).trim(),
                         isBound: true,
                     });
                     index = closingBrackets + 2;
+                    lastIdentifiedText = index - 1;
                     continue;
                 }
 
@@ -418,11 +428,18 @@ export const parseComponent = (component: Class) => {
 
             index++;
             continue;
+        } else {
+            // assume it's just text
+            index++;
         }
     }
 
-    assert(tagStack.length === 0, "Did not find element to parse");
-    assert(!!rootElement, "Root element undefined");
-
-    return rootElement;
+    return {
+        type: ViewNodeTypes.Component,
+        tagName: meta.selector,
+        isSelfClosing: false,
+        attributes: [],
+        events: [],
+        body: rootElements,
+    } satisfies ComponentViewNode;
 };

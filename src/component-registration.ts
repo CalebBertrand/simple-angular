@@ -18,8 +18,8 @@ type ComponentClass = Class & {
 const metaBySelector = new Map<string, InternalComponentMetadata>();
 
 // This is the decorator which will register a class as a component
-export const Component =
-    (componentMetadata: ComponentMetadata) => (componentCtor: Class) => {
+export function Component (componentMetadata: ComponentMetadata) {
+    return function <T extends Class>(componentCtor: T) {
         const meta = {
             ...componentMetadata,
             ast: null,
@@ -28,8 +28,9 @@ export const Component =
         (componentCtor as any)[COMPONENT_META] = meta;
         metaBySelector.set(componentMetadata.selector, meta);
 
-        return componentCtor as ComponentClass;
-    };
+        return componentCtor as T & ComponentClass;
+    }
+}
 
 // mostly useful for instructions to get context about the component from a simple string selector
 export const getComponentMeta = (getBy: string | Class) => {

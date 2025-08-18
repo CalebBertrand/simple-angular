@@ -390,10 +390,6 @@ const isInDeactivatedRegion = () => {
     return false;
 };
 
-const detatchNode = () => {
-    const {} = getState();
-};
-
 const setBinding = (
     binding: Binding,
     assignmentFn: (value: any) => void = (_) => {},

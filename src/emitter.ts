@@ -167,12 +167,12 @@ const createRenderFnRec = (componentNode: ComponentInstructionNode) => {
     const updateInstructions: Array<string> = [];
     let index = 0; // used to track where in the lView these nodes will be
 
-    const stack: InstructionStack = [
+    const stack: InstructionStack = componentNode.body.map(node => (
         {
-            node: componentNode,
+            node,
             childrenProcessed: false,
-        },
-    ];
+        }
+    ));
     while (stack.length > 0) {
         const { node, childrenProcessed } = stack.at(-1)!;
         if (childrenProcessed) {
