@@ -4,6 +4,7 @@ import { createRenderFn } from "./emitter";
 import { setRootElement } from "./instructions";
 import { parseComponent } from "./template-parser";
 import type { Class } from "./utils/Class";
+import { instructions } from './instructions';
 
 // Only lifecyle hooks I'll be supporting
 export interface OnInit {

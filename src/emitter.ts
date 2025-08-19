@@ -6,6 +6,7 @@ import {
     type ViewNodeEvent,
 } from "./template-parser";
 import type { MapUnion } from "./utils/UnionMapper";
+import { instructions } from './instructions';
 
 /** Some Domain Mapping */
 
@@ -106,15 +107,9 @@ const nodeStartInstructions = (index: number, node: InstructionNode) => {
                 createInstructions: innerCreateInstructs,
             } = createRenderFnRec(node);
 
-            createInstructions.push(
-                i.createComponent(index, node.tagName),
-                ...innerCreateInstructs,
-            );
+            createInstructions.push(...innerCreateInstructs);
 
-            updateInstructions.push(
-                i.enterComponent(index),
-                ...innerUpdateInstructs,
-            );
+            updateInstructions.push(...innerUpdateInstructs);
             break;
         case InstructionNodeType.If:
             createInstructions.push(i.createIf(index, node.expression));
@@ -163,9 +158,9 @@ const nodeEndInstructions = (node: InstructionNode) => {
 };
 
 const createRenderFnRec = (componentNode: ComponentInstructionNode) => {
-    const createInstructions: Array<string> = [];
-    const updateInstructions: Array<string> = [];
-    let index = 0; // used to track where in the lView these nodes will be
+    const createInstructions: Array<string> = [i.createComponent(0, componentNode.tagName)];
+    const updateInstructions: Array<string> = [i.enterComponent(0)];
+    let index = 1; // used to track where in the lView these nodes will be. 0 is already taken by the parent component
 
     const stack: InstructionStack = componentNode.body.map(node => (
         {
@@ -219,7 +214,13 @@ const createRenderFnRec = (componentNode: ComponentInstructionNode) => {
         }
     `;
 
-    const renderFn = new Function(createStageParam, fnBody);
+    const instructionParams = Object.keys(instructions);
+    const instructionFunctions = Object.values(instructions);
+
+    const renderFn = function(createStageParam: boolean) {
+        return new Function(...instructionParams, 'createStage', fnBody)
+          .call(null, ...instructionFunctions, createStageParam);
+      };
     return {
         renderFn,
         createInstructions,

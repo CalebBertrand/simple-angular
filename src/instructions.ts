@@ -114,6 +114,10 @@ const createComponent = (index: number, selector: string) => {
     const instance = new componentClass();
     const { parent, lView } = getState();
 
+    assert(!!parent?.native, 'Attempted to create a component but no parent native element found');
+
+    parent.native.appendChild(native);
+
     const componentNode = {
         type: LViewEntryType.Component,
         native,
@@ -169,6 +173,9 @@ const createElement = (index: number, tag: string) => {
 
     const native = document.createElement(tag);
     const state = getState();
+
+    assert(!!state.parent?.native, 'Attempted to create an element but no parent native element found');
+    state.parent.native.appendChild(native);
 
     const elementNode: Extract<LViewEntry, { type: LViewEntryType.Element }> = {
         parent: state.parent,
@@ -255,11 +262,10 @@ const closeElement = (tag: string) => {
     }
 
     const { parent } = getState();
-    assert(
-        parent?.type === LViewEntryType.Element &&
-            parent.native.tagName === tag,
-        `Unexpected closing ${tag} tag.`,
-    );
+    assert(parent?.type === LViewEntryType.Element, 'Tried to close an element but wasnt in one.');
+
+    const nativeTagName = parent?.native.tagName.toLowerCase();
+    assert(nativeTagName === tag.toLowerCase(), `Unexpected closing ${tag} tag.`);
 
     popParent();
 };
@@ -270,9 +276,10 @@ const createText = (index: number, value: string, isBound: boolean) => {
     }
 
     const { lView, parent } = getState();
-    assert(!!parent, "No parent element to append text to.");
+    assert(!!parent?.native, "No parent element to append text to.");
 
     const native = document.createTextNode(value);
+    parent.native.appendChild(native);
 
     let binding: Binding;
     if (isBound) {
@@ -311,8 +318,11 @@ const createIf = (index: number, bindExpression: string) => {
 
     const state = getState();
     const { lView, parent } = state;
+    assert(!!parent?.native, 'Attempted to create an if but no parent native element to append to');
 
     const native = document.createComment(`<__if__ bind="${bindExpression}">`);
+    parent.native.appendChild(native);
+
     const expression = Function(`return ${bindExpression};`);
     const evaluatedValue = !!evaluate(expression);
     const ifNode: Extract<LViewEntry, { type: LViewEntryType.If }> = {
@@ -349,8 +359,12 @@ const createElse = (index: number) => {
 
     assert(!!lastIf, "Tried to create an else but was not after an if.");
 
-    const parent = lastIf.parent!;
+    const parent = lastIf.parent;
+    assert(!!parent?.native, 'Attempted to create an else but no parent native element found to append to');
+
     const native = document.createComment(`<__else__>`);
+    parent.native.appendChild(native);
+
     const elseNode: Extract<LViewEntry, { type: LViewEntryType.Else }> = {
         parent,
         native,

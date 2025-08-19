@@ -174,10 +174,11 @@ function isValidEvent(attr: string): false | ViewNodeEvent {
 }
 
 function isValidClosingTag(str: string) {
-    const parts = str.split(/\s+/);
+    if (!str.length || str[0] !== '/') return false;
+    const parts = str.slice(1).split(/\s+/);
     if (parts.length !== 1) return false;
     const [tagName] = parts;
-    if (!isAlphaNum(tagName)) return false;
+    if (!isValidTagName(tagName)) return false;
     return { tagName };
 }
 
@@ -261,7 +262,6 @@ export const parseComponent = (component: Class) => {
     const tagStack: Array<ElementViewNode | ControlFlowViewNode | ComponentViewNode> = [];
 
     const addToParent = (node: ViewNode) => {
-        debugger;
         const parent = tagStack.at(-1);
         if (!parent) {
             if (!tagStack.length) {
@@ -329,8 +329,8 @@ export const parseComponent = (component: Class) => {
                     });
                 }
 
-                lastIdentifiedText = index;
                 index = closingBracket + 1;
+                lastIdentifiedText = index - 1;
                 continue;
             } else {
                 const closingValidation = isValidClosingTag(

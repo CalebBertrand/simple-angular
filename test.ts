@@ -7,8 +7,11 @@ const rootElement = document.getElementById('app')!;
     selector: 'main',
     template: `
         <h1>Hello World!</h1>
+        <p>{{ this.text }}</p>
     `,
 })
-class MainComponent {}
+class MainComponent {
+    text = 'This is some bound text';
+}
 
 bootstrapApplication(rootElement, MainComponent);
