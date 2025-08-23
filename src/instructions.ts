@@ -32,12 +32,12 @@ type LViewEntry = {
       }
     | {
           type: LViewEntryType.If;
-          native: Comment;
+          native: HTMLDivElement;
           binding: Binding & { static: false }; // technically this could be optimized to cover the case when an if statement has a static value in it
       }
     | {
           type: LViewEntryType.Else;
-          native: Comment;
+          native: HTMLDivElement;
           ifEntry: LViewEntry & { type: LViewEntryType.If };
       }
     | {
@@ -47,7 +47,7 @@ type LViewEntry = {
       }
     | {
           type: LViewEntryType.Component; // currently just using containers as a root node for components
-          native: Comment;
+          native: HTMLDivElement;
           instance: any; // the actual instantiation of the class
       }
 );
@@ -109,7 +109,9 @@ const popParent = () => {
 };
 
 const createComponent = (index: number, selector: string) => {
-    const native = document.createComment(`<__${selector}__start__>`);
+    const native = document.createElement('div');
+    native.style = 'display: contents;'; // make sure layout isn't effected in any way
+    native.setAttribute('data-directive-type', selector);
     const { componentClass } = getComponentMeta(selector);
     const instance = new componentClass();
     const { parent, lView } = getState();
@@ -320,7 +322,9 @@ const createIf = (index: number, bindExpression: string) => {
     const { lView, parent } = state;
     assert(!!parent?.native, 'Attempted to create an if but no parent native element to append to');
 
-    const native = document.createComment(`<__if__ bind="${bindExpression}">`);
+    const native = document.createElement('div');
+    native.style = 'display: contents;';
+    native.setAttribute('data-directive-type', 'if');
     parent.native.appendChild(native);
 
     const expression = Function(`return ${bindExpression};`);
@@ -362,7 +366,9 @@ const createElse = (index: number) => {
     const parent = lastIf.parent;
     assert(!!parent?.native, 'Attempted to create an else but no parent native element found to append to');
 
-    const native = document.createComment(`<__else__>`);
+    const native = document.createElement('div');
+    native.style = 'display: contents;';
+    native.setAttribute('data-directive-type', 'else');
     parent.native.appendChild(native);
 
     const elseNode: Extract<LViewEntry, { type: LViewEntryType.Else }> = {

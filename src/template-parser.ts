@@ -173,13 +173,16 @@ function isValidEvent(attr: string): false | ViewNodeEvent {
     return { name, value: value.slice(1, -1) };
 }
 
-function isValidClosingTag(str: string) {
-    if (!str.length || str[0] !== '/') return false;
-    const parts = str.slice(1).split(/\s+/);
-    if (parts.length !== 1) return false;
+function isValidClosingTag(template: string, startIndex: number, endIndex: number): LexingResult<{ tagName: string; }> {
+    const failedResult: LexingResult<{ tagName: string; }> = { valid: false, jumpTo: startIndex };
+
+    if (template[startIndex] !== '/') return failedResult;
+    const parts = template.slice(startIndex + 1, endIndex).split(/\s+/);
+    if (parts.length !== 1) return failedResult;
     const [tagName] = parts;
-    if (!isValidTagName(tagName)) return false;
-    return { tagName };
+    if (!isValidTagName(tagName)) return failedResult;
+
+    return { valid: true, jumpTo: endIndex + 1, tagName };
 }
 
 function isValidIfOpening(
@@ -261,7 +264,7 @@ export const parseComponent = (component: Class) => {
     let rootElements: Array<ViewNode> = [];
     const tagStack: Array<ElementViewNode | ControlFlowViewNode | ComponentViewNode> = [];
 
-    const addToParent = (node: ViewNode) => {
+    const setParent = (node: ViewNode) => {
         const parent = tagStack.at(-1);
         if (!parent) {
             if (!tagStack.length) {
@@ -287,7 +290,7 @@ export const parseComponent = (component: Class) => {
             .slice(lastIdentifiedText + 1, index)
             .trim();
         if (textSegment) {
-            addToParent({
+            setParent({
                 type: ViewNodeTypes.Text,
                 body: textSegment,
                 isBound: false,
@@ -333,30 +336,28 @@ export const parseComponent = (component: Class) => {
                 lastIdentifiedText = index - 1;
                 continue;
             } else {
-                const closingValidation = isValidClosingTag(
-                    template.slice(index + 1, closingBracket),
-                );
-                if (!closingValidation) {
-                    index++;
+                const closingValidation = isValidClosingTag(template, index + 1, closingBracket);
+
+                if (!closingValidation.valid) {
+                    index = closingValidation.jumpTo;
                     continue;
                 }
 
                 addPastTextToParent();
 
+                index = closingValidation.jumpTo;
+                lastIdentifiedText = index - 1;
+
                 const tagToClose = tagStack.pop();
-                if (
-                    tagToClose?.type !== ViewNodeTypes.Element ||
-                    tagToClose.tagName !== closingValidation.tagName
-                ) {
-                    throw new Error(
-                        `Unexpected closing ${closingValidation.tagName} element.`,
-                    );
+                assert(!!tagToClose, 'Tried to close a tag but the tag stack was empty');
+
+                const parent = tagStack.at(-1);
+                if (!parent) {
+                    rootElements.push(tagToClose);
+                } else {
+                    parent.body.push(tagToClose);
                 }
 
-                addToParent(tagToClose);
-
-                lastIdentifiedText = index;
-                index = closingBracket + 1;
                 continue;
             }
         } else if (nextChar === "@") {
@@ -402,7 +403,7 @@ export const parseComponent = (component: Class) => {
 
                 // No @else found, pop the if statement and add it to parent
                 tagStack.pop();
-                addToParent(parent);
+                setParent(parent);
                 lastIdentifiedText = index;
                 index++;
                 continue;
@@ -412,7 +413,7 @@ export const parseComponent = (component: Class) => {
                 const closingBrackets = template.indexOf("}}", index);
                 if (closingBrackets > 0) {
                     addPastTextToParent();
-                    addToParent({
+                    setParent({
                         type: ViewNodeTypes.Text,
                         body: template.slice(index + 2, closingBrackets).trim(),
                         isBound: true,

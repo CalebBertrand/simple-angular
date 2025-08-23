@@ -158,6 +158,7 @@ const nodeEndInstructions = (node: InstructionNode) => {
 };
 
 const createRenderFnRec = (componentNode: ComponentInstructionNode) => {
+    componentNode.body = componentNode.body.reverse(); // its much faster to pop off an array than unshift
     const createInstructions: Array<string> = [i.createComponent(0, componentNode.tagName)];
     const updateInstructions: Array<string> = [i.enterComponent(0)];
     let index = 1; // used to track where in the lView these nodes will be. 0 is already taken by the parent component
