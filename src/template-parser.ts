@@ -72,21 +72,82 @@ type LexingResult<T> =
           jumpTo: number;
       } & T);
 
+
+function areValidElementParts(template: string, startIndex: number, endIndex: number): false | Array<string> {
+    if (!isAlpha(template.charAt(startIndex))) return false;
+
+    const parts = [];
+    let i = startIndex + 1;
+    let currentPartStart = i;
+
+    enum ParseState {
+        InTag,
+        InAttrName,
+        InQuotes,
+        InWhitespace
+    }
+    let state: ParseState = ParseState.InTag;
+    while (i < endIndex + 1) {
+        const char = template.charAt(i);
+        switch(state) {
+            case ParseState.InTag:
+                if (char.match('\s') || char === '>') {
+                    state = ParseState.InWhitespace;
+                    parts.push(template.slice(startIndex, i));
+                } else if (!isAlphaNum(char)) {
+                    return false; // invalid tag name
+                }
+
+                i++;
+                continue;
+            case ParseState.InQuotes:
+                if (char === '"') {
+                    parts.push(template.slice(currentPartStart, i + 1));
+                    state = ParseState.InWhitespace;
+                }
+
+                i++;
+                continue;
+            case ParseState.InWhitespace:
+                if (!char.match('\s') && char !== '>') {
+                    currentPartStart = i;
+                    state = ParseState.InAttrName;
+                }
+
+                i++;
+                continue;
+            case ParseState.InAttrName:
+                if (char.match('\s') || char === '>') {
+                    // must be a shorthand attribute, like "invalid"
+                    parts.push(template.slice(currentPartStart, i + 1));
+                    state = ParseState.InWhitespace;
+                } else if (char === '=' && template.charAt(i + 1) === '"') {
+                    i++;
+                    state = ParseState.InQuotes;
+                }
+
+                i++;
+                continue;
+        }
+    }
+
+    if (state !== ParseState.InWhitespace) {
+        return false;
+    }
+
+    return parts;
+}
+
 // intended to run on whatever's between the opening and closing angle brackets
 function isValidOpenOrSelfClosingTag(
-    str: string,
+    template: string, startIndex: number, endIndex: number
 ): false | ElementViewNode | ComponentViewNode {
-    str = str.trim();
+    const isSelfClosing = template[startIndex] === "/";
 
-    const isSelfClosing = str.endsWith("/");
-    const inner = (isSelfClosing ? str.slice(0, str.length - 1) : str).trim();
-
-    if (!inner) return false;
-
-    const parts = inner.split(/"\s+/);
+    const parts = areValidElementParts(template, startIndex, endIndex);
+    if (parts === false) return false;
 
     const tagName = parts[0];
-    if (!isValidTagName(tagName)) return false;
 
     // Validate each attribute
     const attributes: Array<ViewNodeAttribute> = [];
@@ -311,9 +372,7 @@ export const parseComponent = (component: Class) => {
                 continue;
             }
 
-            const openingValidation = isValidOpenOrSelfClosingTag(
-                template.slice(index + 1, closingBracket),
-            );
+            const openingValidation = isValidOpenOrSelfClosingTag(template, index + 1, closingBracket);
 
             // valid opening tag, skip to end and update stack as needed
             if (openingValidation) {
