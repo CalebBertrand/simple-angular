@@ -8,7 +8,8 @@ const rootElement = document.getElementById('app')!;
     template: `
         <h1>Hello World!</h1>
         <p>{{ this.text }}</p>
-        <button  (click)="addExclamation()">Make this exciting</button>
+        <p>And this is in uppercase: {{ this.text.toUpperCase(); }}</p>
+        <button (click)="this.addExclamation()">Make this exciting</button>
     `,
 })
 class MainComponent {

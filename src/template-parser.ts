@@ -91,7 +91,7 @@ function areValidElementParts(template: string, startIndex: number, endIndex: nu
         const char = template.charAt(i);
         switch(state) {
             case ParseState.InTag:
-                if (char.match('\s') || char === '>') {
+                if (/\s/g.test(char) || char === '>') {
                     state = ParseState.InWhitespace;
                     parts.push(template.slice(startIndex, i));
                 } else if (!isAlphaNum(char)) {
@@ -109,7 +109,7 @@ function areValidElementParts(template: string, startIndex: number, endIndex: nu
                 i++;
                 continue;
             case ParseState.InWhitespace:
-                if (!char.match('\s') && char !== '>') {
+                if (!/\s/g.test(char) && char !== '>') {
                     currentPartStart = i;
                     state = ParseState.InAttrName;
                 }
@@ -117,7 +117,7 @@ function areValidElementParts(template: string, startIndex: number, endIndex: nu
                 i++;
                 continue;
             case ParseState.InAttrName:
-                if (char.match('\s') || char === '>') {
+                if (/\s/g.test(char) || char === '>') {
                     // must be a shorthand attribute, like "invalid"
                     parts.push(template.slice(currentPartStart, i + 1));
                     state = ParseState.InWhitespace;
@@ -231,7 +231,7 @@ function isValidEvent(attr: string): false | ViewNodeEvent {
     if (!isValidTagName(name)) return false;
     if (!(value.startsWith('"') && value.endsWith('"'))) return false;
 
-    return { name, value: value.slice(1, -1) };
+    return { name, value: value.slice(1, -2) };
 }
 
 function isValidClosingTag(template: string, startIndex: number, endIndex: number): LexingResult<{ tagName: string; }> {

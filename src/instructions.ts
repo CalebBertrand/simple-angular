@@ -398,7 +398,8 @@ const closeConditional = () => {
 };
 
 const evaluate = (expression: (Binding & { static: false })["expression"]) => {
-    return expression.bind(getState().ctx)();
+    const context = getState().ctx;
+    return expression.bind(context)();
 };
 
 const isInDeactivatedRegion = () => {

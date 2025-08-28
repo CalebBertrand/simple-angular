@@ -34,7 +34,7 @@ export const bootstrapApplication = (
 
     // mini zone js
     const refresh = () => renderer(false);
-    window.addEventListener('click', refresh, true);
+    window.addEventListener('click', refresh);
 
     const baseSetTimeout = window.setTimeout;
     window.setTimeout = (fn, ms) => {
