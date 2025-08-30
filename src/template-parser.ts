@@ -384,17 +384,7 @@ export const parseComponent = (component: Class) => {
       // valid opening tag, skip to end and update stack as needed
       if (openingValidation) {
         addPastTextToParent();
-
-        const { isSelfClosing, tagName, attributes, events } =
-          openingValidation;
-        addNode({
-          type: ViewNodeTypes.Element,
-          attributes,
-          events,
-          tagName,
-          isSelfClosing,
-          body: [],
-        });
+        addNode(openingValidation);
 
         index = closingBracket + 1;
         lastIdentifiedText = index - 1;
@@ -421,7 +411,7 @@ export const parseComponent = (component: Class) => {
       const validation = isValidIfOpening(template, index);
       if (validation.valid) {
         addPastTextToParent();
-        tagStack.push({
+        addNode({
           type: ViewNodeTypes.If,
           expression: validation.innerExpression,
           body: [],
