@@ -10,13 +10,16 @@ export interface OnInit {
     ngOnInit(): void;
 }
 
-const compileApplication = <T extends Class>(rootComponent: T, rootElement: HTMLElement) => {
+const compileApplication = <T extends Class>(
+    rootComponent: T,
+    rootElement: HTMLElement,
+) => {
     // get the AST
     const rootViewNode = parseComponent(rootComponent);
 
     // set root element which the instructions will use to build off of
     setRootElement(rootElement);
-    
+
     // build the render function
     return createRenderFn(rootViewNode);
 };
@@ -34,7 +37,7 @@ export const bootstrapApplication = (
 
     // mini zone js
     const refresh = () => renderer(false);
-    window.addEventListener('click', refresh);
+    window.addEventListener("click", refresh);
 
     const baseSetTimeout = window.setTimeout;
     window.setTimeout = (fn, ms) => {
@@ -53,5 +56,4 @@ export const bootstrapApplication = (
         };
         return baseSetInterval(patchedFn, ms);
     };
-
 };

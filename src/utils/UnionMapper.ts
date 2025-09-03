@@ -23,12 +23,11 @@
     *  are copied from the original union types.
 >;*/
 export type MapUnion<
-  T,
-  K extends keyof T,
-  Overrides extends Record<PropertyKey, object>
+    T,
+    K extends keyof T,
+    Overrides extends Record<PropertyKey, object>,
 > = T extends infer U
-  ? U extends Record<K, keyof Overrides>
-    ? Omit<U, keyof Overrides[U[K]]> & Overrides[U[K]]
-    : U
-  : never;
-
+    ? U extends Record<K, keyof Overrides>
+        ? Omit<U, keyof Overrides[U[K]]> & Overrides[U[K]]
+        : U
+    : never;

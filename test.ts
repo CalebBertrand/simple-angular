@@ -1,25 +1,30 @@
-import { Component } from './src/component-registration';
-import { bootstrapApplication } from './src/main';
+import { Component } from "./src/component-registration";
+import { bootstrapApplication } from "./src/main";
 
-const rootElement = document.getElementById('app')!;
+const rootElement = document.getElementById("app")!;
 
 @Component({
-  selector: 'main',
-  template: `
+    selector: "main",
+    template: `
         <h1>Hello World!</h1>
-        <p>{{ this.text }}</p>
+        @if (!this.hidden) {
+            <p>{{ this.text }}</p>
+        }
         <p>
-          And this is in uppercase: <br />
-          {{ this.text.toUpperCase(); }}
+            And this is in uppercase: <br />
+            {{ this.text.toUpperCase(); }}
         </p>
         <button (click)="this.addExclamation()">Make this exciting</button>
+        <button (click)="this.hidden = !this.hidden">Toggle if</button>
+        <p>{{ this.hidden }}</p>
     `,
 })
 class MainComponent {
-  text = 'This is some bound text';
-  addExclamation() {
-    this.text = this.text + '!';
-  }
+    hidden = false;
+    text = "This is some bound text";
+    addExclamation() {
+        this.text = this.text + "!";
+    }
 }
 
 bootstrapApplication(rootElement, MainComponent);
