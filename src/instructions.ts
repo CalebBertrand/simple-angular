@@ -74,25 +74,24 @@ type LViewBlockEntries = Extract<
 
 type LView = Array<LViewEntry>;
 
-type RenderingState = {
+type TemplateRenderingContext = {
     parent: LViewBlockEntries | null;
     lView: LView;
-    ctx: any | null; // the instance of the class being rendered, it will be used to evaluate expressions
-    lastIf: (LViewEntry & { type: LViewEntryType.If }) | null;
+    componentInstance: any | null; // the instance of the class being rendered, it will be used to evaluate expressions
+    lastIf?: (LViewEntry & { type: LViewEntryType.If });
 };
 
 const rootLView: LView = [];
 
-const initialRenderingState: RenderingState = {
+const initialRenderingContext: TemplateRenderingContext = {
     parent: null, // the immediate parent, which could be any kind of node
     lView: rootLView,
-    ctx: null,
-    lastIf: null,
+    componentInstance: null,
 };
-const stateStack: Array<RenderingState> = [initialRenderingState];
+const templateRStack: Array<TemplateRenderingContext> = [initialRenderingContext];
 
 export const setRootElement = (element: HTMLElement) => {
-    initialRenderingState.parent = {
+    initialRenderingContext.parent = {
         type: LViewEntryType.Element,
         native: element,
         attributes: new Map(),
@@ -103,7 +102,7 @@ export const setRootElement = (element: HTMLElement) => {
 };
 
 const getState = () => {
-    const mostRecentState = stateStack.at(-1);
+    const mostRecentState = templateRStack.at(-1);
     assert(
         !!mostRecentState,
         "Attemted to get rendering state but the stack was empty",
@@ -145,11 +144,10 @@ const createComponent = (index: number, selector: string, renderFnId: string) =>
 
     lView[index] = componentNode;
 
-    stateStack.push({
+    templateRStack.push({
         lView: instanceLView,
         parent: componentNode,
-        ctx: instance,
-        lastIf: null,
+        componentInstance: instance,
     });
 
     if ("ngOnInit" in instance && typeof instance.ngOnInit === "function") {
@@ -165,19 +163,18 @@ const enterComponent = (index: number) => {
         type: LViewEntryType.Component;
     };
 
-    stateStack.push({
+    templateRStack.push({
         lView: subComponent.lView,
         parent: subComponent,
-        ctx: subComponent.instance,
-        lastIf: null,
+        componentInstance: subComponent.instance,
     });
 
     callRenderFn(subComponent.renderFnId, false);
 };
 
 const closeComponent = () => {
-    stateStack.pop();
-    console.log(stateStack);
+    templateRStack.pop();
+    console.log(templateRStack);
 };
 
 const createElement = (index: number, tag: string) => {
@@ -212,7 +209,7 @@ const enterElement = (index: number) => {
 };
 
 const createEvent = (name: string, value: string) => {
-    const { parent, ctx } = getState();
+    const { parent, componentInstance: ctx } = getState();
     assert(
         parent?.type === LViewEntryType.Element,
         "Tried to set an event but not in an element",
@@ -332,13 +329,15 @@ const createIf = (index: number, bindExpression: string, renderFnId: string) => 
     anchor.appendChild(native);
 
     const state = getState();
-    const { lView, parent } = state;
+    const { lView, parent, componentInstance: ctx } = state;
     assert(
         !!parent?.native,
         "Attempted to create an if but no parent native element to append to",
     );
 
     parent.native.appendChild(anchor);
+
+    const childLView: LView = [];
 
     const expression = Function(`return ${bindExpression};`);
     const evaluatedValue = !!evaluate(expression);
@@ -350,21 +349,29 @@ const createIf = (index: number, bindExpression: string, renderFnId: string) => 
         index,
         type: LViewEntryType.If,
         renderFnId,
+        lView: childLView,
     };
-
     lView[index] = ifNode;
-    state.parent = ifNode;
     state.lastIf = ifNode;
 
+    // create an lView context for the if
+    templateRStack.push({
+        componentInstance: ctx,
+        parent: ifNode,
+        lView: childLView
+    });
+
     callRenderFn(renderFnId, true);
+
+    // return to the original context
+    templateRStack.pop();
 };
 
 const enterConditional = (index: number) => {
-    const state = getState();
-    const node = state.lView[index] as LViewEntry & {
+    const { lView, componentInstance: ctx } = getState();
+    const node = lView[index] as LViewEntry & {
         type: LViewEntryType.If | LViewEntryType.Else;
     };
-    state.parent = node;
 
     let activated: boolean;
     if (node.type === LViewEntryType.If) {
@@ -381,15 +388,20 @@ const enterConditional = (index: number) => {
     }
 
     if (activated) {
-        callRenderFn(node.renderFnId, false);
-    }
+        templateRStack.push({
+            componentInstance: ctx,
+            lView: node.lView,
+            parent: node,
+        });
 
-    popParent();
+        callRenderFn(node.renderFnId, false);
+
+        templateRStack.pop();
+    }
 };
 
 const createElse = (index: number, renderFnId: string) => {
-    const state = getState();
-    const { lView, lastIf } = state;
+    const { lastIf, componentInstance: ctx, lView } = getState();
 
     assert(!!lastIf, "Tried to create an else but was not after an if.");
 
@@ -409,6 +421,7 @@ const createElse = (index: number, renderFnId: string) => {
 
     anchor.appendChild(native);
 
+    const childLView: LView = [];
     const elseNode: Extract<LViewEntry, { type: LViewEntryType.Else }> = {
         parent,
         native,
@@ -417,18 +430,22 @@ const createElse = (index: number, renderFnId: string) => {
         type: LViewEntryType.Else,
         ifEntry: lastIf,
         renderFnId,
+        lView: childLView,
     };
-
     lView[index] = elseNode;
-    state.parent = elseNode;
+
+    templateRStack.push({
+        componentInstance: ctx,
+        lView: childLView,
+        parent: elseNode,
+    });
 
     callRenderFn(renderFnId, true);
+
+    templateRStack.pop();
 };
 
 const callRenderFn = (id: string, createStage: boolean) => {
-    if (!createStage) {
-        debugger;
-    }
     const renderFn = renderFnRegistry.get(id);
     assert(!!renderFn, 'Attempted to render a template but couldnt find its renderFn');
 
@@ -436,7 +453,7 @@ const callRenderFn = (id: string, createStage: boolean) => {
 };
 
 const evaluate = (expression: (Binding & { static: false })["expression"]) => {
-    const context = getState().ctx;
+    const context = getState().componentInstance;
     return expression.bind(context)();
 };
 
