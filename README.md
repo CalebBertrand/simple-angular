@@ -1,3 +1,3 @@
 # simple-angular
 
-[Edit in StackBlitz next generation editor ⚡️](https://stackblitz.com/~/github.com/CalebBertrand/simple-angular)
+A "simple" recreation of Angular made as an exercise in compilers and to learn better how Angular works. 
