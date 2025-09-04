@@ -115,7 +115,7 @@ const popParent = () => {
     state.parent = state.parent?.parent ?? null;
 };
 
-const createComponent = (index: number, selector: string, renderFnId: string) => {
+const createComponent = (index: number, selector: string) => {
     const native = document.createElement("div");
     native.style = "display: contents;";
     native.setAttribute("data-directive-type", selector);
@@ -138,7 +138,7 @@ const createComponent = (index: number, selector: string, renderFnId: string) =>
         index,
         parent,
         instance,
-        renderFnId,
+        renderFnId: selector,
         lView: instanceLView,
     } as LViewEntry & { type: LViewEntryType.Component };
 
@@ -154,7 +154,7 @@ const createComponent = (index: number, selector: string, renderFnId: string) =>
         instance.ngOnInit();
     }
 
-    callRenderFn(renderFnId, true);
+    callRenderFn(selector, true);
 };
 
 const enterComponent = (index: number) => {
@@ -174,7 +174,6 @@ const enterComponent = (index: number) => {
 
 const closeComponent = () => {
     templateRStack.pop();
-    console.log(templateRStack);
 };
 
 const createElement = (index: number, tag: string) => {
@@ -318,6 +317,13 @@ const updateText = (index: number) => {
 };
 
 const createIf = (index: number, bindExpression: string, renderFnId: string) => {
+    const state = getState();
+    const { lView, parent, componentInstance } = state;
+    assert(
+        !!parent?.native,
+        "Attempted to create an if but no parent native element to append to",
+    );
+
     const anchor = document.createElement("div");
     anchor.style = "display: contents;";
     anchor.setAttribute("data-anchor", "if");
@@ -325,15 +331,6 @@ const createIf = (index: number, bindExpression: string, renderFnId: string) => 
     const native = document.createElement("div");
     native.style = "display: contents;";
     native.setAttribute("data-directive-type", "if");
-
-    anchor.appendChild(native);
-
-    const state = getState();
-    const { lView, parent, componentInstance: ctx } = state;
-    assert(
-        !!parent?.native,
-        "Attempted to create an if but no parent native element to append to",
-    );
 
     parent.native.appendChild(anchor);
 
@@ -354,9 +351,14 @@ const createIf = (index: number, bindExpression: string, renderFnId: string) => 
     lView[index] = ifNode;
     state.lastIf = ifNode;
 
+    // only actually add it to the DOM if it's initial value is true
+    if (evaluatedValue) {
+        anchor.appendChild(native);
+    }
+
     // create an lView context for the if
     templateRStack.push({
-        componentInstance: ctx,
+        componentInstance,
         parent: ifNode,
         lView: childLView
     });
@@ -368,7 +370,7 @@ const createIf = (index: number, bindExpression: string, renderFnId: string) => 
 };
 
 const enterConditional = (index: number) => {
-    const { lView, componentInstance: ctx } = getState();
+    const { lView, componentInstance } = getState();
     const node = lView[index] as LViewEntry & {
         type: LViewEntryType.If | LViewEntryType.Else;
     };
@@ -389,7 +391,7 @@ const enterConditional = (index: number) => {
 
     if (activated) {
         templateRStack.push({
-            componentInstance: ctx,
+            componentInstance,
             lView: node.lView,
             parent: node,
         });
@@ -401,7 +403,7 @@ const enterConditional = (index: number) => {
 };
 
 const createElse = (index: number, renderFnId: string) => {
-    const { lastIf, componentInstance: ctx, lView } = getState();
+    const { lastIf, componentInstance, lView } = getState();
 
     assert(!!lastIf, "Tried to create an else but was not after an if.");
 
@@ -419,7 +421,11 @@ const createElse = (index: number, renderFnId: string) => {
     native.style = "display: contents;";
     native.setAttribute("data-directive-type", "if");
 
-    anchor.appendChild(native);
+    parent.native.appendChild(anchor);
+
+    if (!lastIf.binding.lastValue) {
+        anchor.appendChild(native);
+    }
 
     const childLView: LView = [];
     const elseNode: Extract<LViewEntry, { type: LViewEntryType.Else }> = {
@@ -435,7 +441,7 @@ const createElse = (index: number, renderFnId: string) => {
     lView[index] = elseNode;
 
     templateRStack.push({
-        componentInstance: ctx,
+        componentInstance,
         lView: childLView,
         parent: elseNode,
     });

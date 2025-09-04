@@ -43,3 +43,7 @@ export const getComponentMeta = (getBy: string | Class) => {
     }
     return meta;
 };
+
+export const getAllRegisteredComponents = () => {
+    return [...metaBySelector.values()].map(x => x.componentClass as Class);
+};

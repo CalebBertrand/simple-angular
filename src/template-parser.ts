@@ -159,7 +159,7 @@ function isValidOpenOrSelfClosingTag(
     const events: Array<ViewNodeEvent> = [];
     for (let i = 1; i < parts.length; i++) {
         const attr = parts[i];
-        const attrValidation = isValidAttribute(attr + '"'); // add the double quotes back from the regex split
+        const attrValidation = isValidAttribute(attr);
         if (attrValidation) {
             attributes.push(attrValidation);
             continue;
@@ -209,7 +209,9 @@ function isValidAttribute(attr: string): false | ViewNodeAttribute {
     }
 
     let name = attr.slice(0, eqIndex).trim();
-    const value = attr.slice(eqIndex + 1).trim();
+    const quotes = attr.slice(eqIndex + 1).trim();
+    if (!(quotes.startsWith('"') && quotes.endsWith('"'))) return false;
+    const value = quotes.slice(1, -1);
 
     let isBound = false;
     if (name.startsWith("[") && name.endsWith("]")) {
@@ -218,7 +220,6 @@ function isValidAttribute(attr: string): false | ViewNodeAttribute {
     }
 
     if (!isValidTagName(name)) return false;
-    if (!(value.startsWith('"') && value.endsWith('"'))) return false;
 
     return { name, value, isBound };
 }
@@ -321,7 +322,7 @@ function isAlpha(ch: string) {
 }
 
 function isAlphaNum(ch: string) {
-    return /^[A-Za-z0-9]$/.test(ch);
+    return /^[A-Za-z0-9\-]$/.test(ch);
 }
 
 export const parseComponent = (component: Class) => {

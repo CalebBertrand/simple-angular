@@ -76,8 +76,8 @@ export const renderFnRegistry = new Map<string, (createStage: boolean) => void>;
 /** The instructions to be emitted in the render funcion (indexes refer to a point in the runtime lView) */
 
 const i = {
-    createComponent: (index: number, tagName: string, renderFnId: string) =>
-        `createComponent(${index}, '${tagName}', '${renderFnId}');`,
+    createComponent: (index: number, tagName: string) =>
+        `createComponent(${index}, '${tagName}');`,
     enterComponent: (index: number) => `enterComponent(${index});`,
     createElement: (index: number, tag: string) =>
         `createElement(${index}, '${tag}');`,
@@ -117,7 +117,8 @@ const nodeStartInstructions = (index: number, node: InstructionNode) => {
             );
             break;
         case InstructionNodeType.Component:
-            createInstructions.push(i.createComponent(index, node.tagName, createRenderFnRec(node)));
+            // don't need to make the render function here, that should be handled once at application bootstrap
+            createInstructions.push(i.createComponent(index, node.tagName));
             updateInstructions.push(i.enterComponent(index));
             break;
         case InstructionNodeType.If:
@@ -161,7 +162,7 @@ const nodeEndInstructions = (node: InstructionNode) => {
 };
 
 const createRenderFnRec = (templateNode: TemplateInstructionNode) => {
-    const fnId = crypto.randomUUID();
+    const fnId = templateNode.type === InstructionNodeType.Component ? templateNode.tagName : crypto.randomUUID();
     templateNode.renderFnId = fnId;
 
     const createInstructions: Array<string> = [];
@@ -215,7 +216,7 @@ const createRenderFnRec = (templateNode: TemplateInstructionNode) => {
 export const createRenderFn = (node: ComponentViewNode) => {
     const fnId = createRenderFnRec(node as any);
     const renderFn = renderFnFromInstructions(
-        [i.createComponent(0, node.tagName, fnId), i.closeComponent()],
+        [i.createComponent(0, node.tagName), i.closeComponent()],
         [i.enterComponent(0), i.closeComponent()],
     );
 
